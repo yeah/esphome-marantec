@@ -95,6 +95,10 @@ For a `cover` entity (open/close/stop), wrap the button in a [template cover](ht
 - **SPI errors (FF0F / 0000):** Check wiring, especially MISO/MOSI and CS pin.
 - **Flipper works but ESP doesn't:** Increase `repeat:` to 6–8. Also verify the exact frequency — some Marantec systems use 868.3 instead of 868.35 MHz.
 
+## AI Disclaimer
+
+This code was written entirely or in parts by an AI assistant. Please review and use at your own discretion. No warranties whatsoever.
+
 ## License
 
 MIT
