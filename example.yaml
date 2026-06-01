@@ -1,100 +1,50 @@
-# ============================================================
-#  ESPHome - Marantec 868 MHz Garage Door Opener
-#  Hardware: ESP32 + CC1101 (868 MHz version)
-# ============================================================
+# Learn a Marantec remote code with an ESP32 + CC1101 — no Flipper needed.
 #
-#  Wiring (CC1101 -> ESP32, dual-pin recommended):
-#    VCC   -> 3.3 V
-#    GND   -> GND
-#    CSN   -> GPIO5
-#    SCK   -> GPIO18
-#    MOSI  -> GPIO23
-#    MISO  -> GPIO19
-#    GDO0  -> GPIO22  (TX data)
-#    GDO2  -> GPIO21  (RX data, optional)
-#
-#  How to find your 49-bit Marantec code:
-#    1. Flipper Zero -> Sub-GHz -> Read -> 868.35 AM650
-#    2. Press your remote - Flipper shows e.g.
-#         Protocol: Marantec  Key: 0x1234ABCDEF01
-#    3. Copy that hex value into the "code:" field below
-#
-#    OR: Use ESPHome remote_receiver + dump: all to capture
-#        the raw signal on GDO2 and decode it.
-# ============================================================
+# Press your Marantec remote near the CC1101 and watch the logs for:
+#   [I][marantec]: Learned code: 0x130CF7B95865A (CRC ok)
+# Use that hex value wherever you need the code.
 
 esphome:
-  name: garage-marantec
-  friendly_name: "Garagentor Marantec"
+  name: marantec-learner
+  # Make the decoder header available to lambdas. Pull it into your config
+  # directory (e.g. next to this YAML) or vendor it however you like.
+  includes:
+    - marantec.h
 
 esp32:
-  board: esp32dev
+  board: az-delivery-devkit-v4
+  framework:
+    type: arduino
 
+logger:
+api:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
-api:
-  encryption:
-    key: !secret api_key
-
-ota:
-  platform: esphome
-
-logger:
-
-# --- External component: Marantec protocol ---
-external_components:
-  - source:
-      type: git
-      url: https://github.com/yeah/esphome-marantec
-      # Or local during development:
-      # type: local
-      # path: components
-    components: [marantec]
-
-# --- CC1101 radio module ---
 spi:
   clk_pin: GPIO18
-  mosi_pin: GPIO23
   miso_pin: GPIO19
+  mosi_pin: GPIO23
 
 cc1101:
+  id: transceiver
   cs_pin: GPIO5
-  frequency: 868.35MHz      # Marantec EU frequency
-  # bandwidth: 650kHz       # default is fine for OOK
+  frequency: 868.35MHz
 
-# --- Transmitter on GDO0 ---
-remote_transmitter:
-  pin: GPIO22               # must match CC1101 GDO0
-  carrier_duty_percent: 100%
-  id: rf_tx
-  on_transmit:
+remote_receiver:
+  id: rf_rx
+  pin: GPIO33                 # CC1101 GDO2
+  dump: raw                   # optional, for debugging
+  tolerance: 25%
+  filter: 250us
+  idle: 15ms                  # above Marantec's ~10 ms inter-frame gap
+  buffer_size: 6kb
+  on_raw:
     then:
-      - cc1101.begin_tx
-  on_complete:
-    then:
-      - cc1101.begin_rx
-
-# --- (Optional) Receiver on GDO2 for sniffing / debugging ---
-# remote_receiver:
-#   pin: GPIO21             # must match CC1101 GDO2
-#   dump: all
-#   filter: 200us
-#   idle: 4ms
-#   buffer_size: 10kb
-
-# --- Marantec garage door button ---
-button:
-  - platform: marantec
-    name: "Garagentor"
-    transmitter_id: rf_tx
-    code: 0x1AABBCCDDEE01     # <- DEIN 49-bit Code hier (hex)
-    repeat: 4                  # Anzahl Wiederholungen
-
-  # Second button / second remote:
-  # - platform: marantec
-  #   name: "Garagentor Taste 2"
-  #   transmitter_id: rf_tx
-  #   code: 0x1AABBCCDDEE02
-  #   repeat: 4
+      - lambda: |-
+          uint64_t code;
+          if (esphome::marantec::decode(x, &code)) {
+            ESP_LOGI("marantec", "Learned code: 0x%013llX (CRC ok)",
+                     (unsigned long long) code);
+          }
